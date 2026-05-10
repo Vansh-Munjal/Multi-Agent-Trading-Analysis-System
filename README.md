@@ -264,11 +264,7 @@ This system uses **mock data tools** — no real market data is fetched. All met
 
 ---
 
-## 📜 License
 
-MIT License — see [LICENSE](LICENSE) for details.
-
----
 
 <div align="center">
   Built with ❤️ using LangChain · LangGraph · NVIDIA NIM · Streamlit
