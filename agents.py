@@ -18,13 +18,17 @@ The supervisor node:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+import time
 from typing import Any, Dict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 from prompts import (
     FUNDAMENTAL_ANALYST_SYSTEM_PROMPT,
@@ -137,6 +141,7 @@ def supervisor_node(state: AgentState) -> AgentState:
 
     # ── Phase B: all reports ready → synthesise ──────────────────────────────
     if len(completed) == 4:
+        logger.info("[Supervisor] All 4 reports collected. Synthesising final decision for %s...", ticker)
         reports_text = "\n\n".join(
             f"=== {k.upper()} ANALYST REPORT ===\n{json.dumps(v, indent=2)}"
             for k, v in reports.items()
@@ -157,12 +162,18 @@ def supervisor_node(state: AgentState) -> AgentState:
             decision = TradingDecision(**decision_dict)
         except Exception as parse_err:
             # Graceful degradation — build a conservative Hold decision
+            logger.error("[Supervisor] Pydantic parse failed — falling back to Hold. Error: %s", parse_err)
             decision = TradingDecision(
                 recommendation="Hold",
                 confidence=50,
                 reasoning=f"Synthesis parsing error: {parse_err}. Raw output: {raw_response[:300]}",
                 risk_summary="Unable to fully parse structured output — treat with caution.",
             )
+
+        logger.info(
+            "[Supervisor] Final Decision: %s | Confidence: %d%%",
+            decision.recommendation, decision.confidence,
+        )
 
         new_messages = list(state.get("messages", [])) + [
             AIMessage(content=f"Final Decision: {decision.recommendation} ({decision.confidence}% confidence)")
@@ -203,7 +214,13 @@ def supervisor_node(state: AgentState) -> AgentState:
     # Validate LLM routing; fall back to preferred order if invalid
     valid_routes = set(routing_map.values()) | {"synthesize", "end"}
     if llm_route not in valid_routes:
+        logger.warning(
+            "[Supervisor] Invalid LLM route '%s' — falling back to preferred order: '%s'",
+            llm_route, next_node,
+        )
         llm_route = next_node
+    else:
+        logger.info("[Supervisor] Routing to: %s (reports done: %s)", llm_route, completed)
 
     new_messages = list(state.get("messages", [])) + [
         AIMessage(content=f"Routing to: {llm_route}")
@@ -228,6 +245,7 @@ def fundamental_analyst_node(state: AgentState) -> AgentState:
     """
     client = _build_client()
     ticker: str = state.get("ticker", "UNKNOWN")
+    logger.info("[Fundamental Analyst] Starting | ticker=%s", ticker)
 
     # Tool call
     raw_data = mock_fundamental_analysis(ticker)
@@ -239,7 +257,9 @@ def fundamental_analyst_node(state: AgentState) -> AgentState:
         f"```json\n{json.dumps(raw_data, indent=2)}\n```\n\n"
         "Please write your fundamental analysis report."
     )
+    _t0 = time.time()
     report_text = _llm_call(FUNDAMENTAL_ANALYST_SYSTEM_PROMPT, human_msg, client)
+    logger.info("[Fundamental Analyst] Report complete | ticker=%s | llm_time=%.2fs", ticker, time.time() - _t0)
 
     updated_reports = {**state.get("analyst_reports", {})}
     updated_reports["fundamental"] = {
@@ -271,6 +291,7 @@ def technical_analyst_node(state: AgentState) -> AgentState:
     """
     client = _build_client()
     ticker: str = state.get("ticker", "UNKNOWN")
+    logger.info("[Technical Analyst] Starting | ticker=%s", ticker)
 
     raw_data = mock_technical_analysis(ticker)
 
@@ -280,7 +301,9 @@ def technical_analyst_node(state: AgentState) -> AgentState:
         f"```json\n{json.dumps(raw_data, indent=2)}\n```\n\n"
         "Please write your technical analysis report."
     )
+    _t0 = time.time()
     report_text = _llm_call(TECHNICAL_ANALYST_SYSTEM_PROMPT, human_msg, client)
+    logger.info("[Technical Analyst] Report complete | ticker=%s | llm_time=%.2fs", ticker, time.time() - _t0)
 
     updated_reports = {**state.get("analyst_reports", {})}
     updated_reports["technical"] = {
@@ -313,6 +336,7 @@ def sentiment_analyst_node(state: AgentState) -> AgentState:
     client = _build_client()
     ticker: str = state.get("ticker", "UNKNOWN")
     context: str = state.get("context", "No additional context provided.")
+    logger.info("[Sentiment Analyst] Starting | ticker=%s | context_words=%d", ticker, len(context.split()))
 
     raw_data = mock_sentiment_analysis(context)
 
@@ -323,7 +347,10 @@ def sentiment_analyst_node(state: AgentState) -> AgentState:
         f"```json\n{json.dumps(raw_data, indent=2)}\n```\n\n"
         "Please write your sentiment analysis report."
     )
+    _t0 = time.time()
     report_text = _llm_call(SENTIMENT_ANALYST_SYSTEM_PROMPT, human_msg, client)
+    logger.info("[Sentiment Analyst] Report complete | ticker=%s | label=%s | llm_time=%.2fs",
+                ticker, raw_data.get('sentiment_label', 'N/A'), time.time() - _t0)
 
     updated_reports = {**state.get("analyst_reports", {})}
     updated_reports["sentiment"] = {
@@ -355,6 +382,7 @@ def risk_manager_node(state: AgentState) -> AgentState:
     """
     client = _build_client()
     ticker: str = state.get("ticker", "UNKNOWN")
+    logger.info("[Risk Manager] Starting | ticker=%s", ticker)
 
     raw_data = calculate_risk_score(ticker, position_size=100_000)
 
@@ -364,7 +392,10 @@ def risk_manager_node(state: AgentState) -> AgentState:
         f"```json\n{json.dumps(raw_data, indent=2)}\n```\n\n"
         "Please write your risk assessment report."
     )
+    _t0 = time.time()
     report_text = _llm_call(RISK_MANAGER_SYSTEM_PROMPT, human_msg, client)
+    logger.info("[Risk Manager] Report complete | ticker=%s | risk_level=%s | llm_time=%.2fs",
+                ticker, raw_data.get('risk_level', 'N/A'), time.time() - _t0)
 
     updated_reports = {**state.get("analyst_reports", {})}
     updated_reports["risk"] = {

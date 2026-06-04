@@ -16,5 +16,5 @@ python-dotenv>=1.0.0
 # ── Typing back-ports ───────────────────────────────────────────────────────
 typing_extensions>=4.12.0
 
-# ── Optional: LangSmith tracing ─────────────────────────────────────────────
-# langsmith>=0.1.0
+# ── LangSmith tracing / observability ───────────────────────────────────────
+langsmith>=0.1.0

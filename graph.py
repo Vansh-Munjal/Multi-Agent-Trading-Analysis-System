@@ -33,7 +33,11 @@ Flow
 
 from __future__ import annotations
 
+import logging
+
 from langgraph.graph import END, START, StateGraph
+
+logger = logging.getLogger(__name__)
 
 from agents import (
     fundamental_analyst_node,
@@ -136,3 +140,4 @@ def build_graph() -> StateGraph:
 # ─────────────────────────────────────────────────────────────────────────────
 
 trading_graph = build_graph()
+logging.getLogger(__name__).info("LangGraph trading_graph compiled and ready")

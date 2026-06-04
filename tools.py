@@ -15,10 +15,15 @@ crypto assets (e.g., BTC, ETH, SOL).
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import random
 import time
 from typing import Any, Dict
+
+from langsmith import traceable
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -53,6 +58,7 @@ def _is_crypto(ticker: str) -> bool:
 # Tool 1 — Fundamental Analysis
 # ---------------------------------------------------------------------------
 
+@traceable(name="mock_fundamental_analysis", run_type="tool")
 def mock_fundamental_analysis(ticker: str) -> Dict[str, Any]:
     """
     Perform a mock fundamental analysis for a given ticker.
@@ -75,6 +81,8 @@ def mock_fundamental_analysis(ticker: str) -> Dict[str, Any]:
     rng = _seeded_random(ticker, offset=1)
     t = ticker.upper()
     is_crypto = _is_crypto(t)
+    logger.debug("mock_fundamental_analysis called | ticker=%s | asset_type=%s",
+                 t, "Crypto" if is_crypto else "Equity")
 
     if is_crypto:
         market_cap_b = round(rng.uniform(5, 800), 2)
@@ -148,6 +156,7 @@ def mock_fundamental_analysis(ticker: str) -> Dict[str, Any]:
 # Tool 2 — Technical Analysis
 # ---------------------------------------------------------------------------
 
+@traceable(name="mock_technical_analysis", run_type="tool")
 def mock_technical_analysis(ticker: str) -> Dict[str, Any]:
     """
     Perform a mock technical analysis for a given ticker.
@@ -168,6 +177,7 @@ def mock_technical_analysis(ticker: str) -> Dict[str, Any]:
     """
     rng = _seeded_random(ticker, offset=2)
     t = ticker.upper()
+    logger.debug("mock_technical_analysis called | ticker=%s", t)
 
     # Simulate a mock current price
     base_price = rng.uniform(10, 4000)
@@ -234,6 +244,7 @@ def mock_technical_analysis(ticker: str) -> Dict[str, Any]:
 # Tool 3 — Sentiment Analysis
 # ---------------------------------------------------------------------------
 
+@traceable(name="mock_sentiment_analysis", run_type="tool")
 def mock_sentiment_analysis(context_text: str) -> Dict[str, Any]:
     """
     Perform a mock sentiment analysis on the provided news / market context.
@@ -255,6 +266,7 @@ def mock_sentiment_analysis(context_text: str) -> Dict[str, Any]:
         Dictionary containing sentiment scores, label, and a summary.
     """
     text = context_text.lower()
+    logger.debug("mock_sentiment_analysis called | context_words=%d", len(context_text.split()))
 
     BULLISH_KEYWORDS = [
         "bullish", "surge", "rally", "breakout", "buy", "upgrade",
@@ -312,6 +324,7 @@ def mock_sentiment_analysis(context_text: str) -> Dict[str, Any]:
 # Tool 4 — Risk Score Calculator
 # ---------------------------------------------------------------------------
 
+@traceable(name="calculate_risk_score", run_type="tool")
 def calculate_risk_score(
     ticker: str,
     position_size: float = 100_000.0,
@@ -339,6 +352,8 @@ def calculate_risk_score(
     rng = _seeded_random(ticker, offset=4)
     t = ticker.upper()
     is_crypto = _is_crypto(t)
+    logger.debug("calculate_risk_score called | ticker=%s | position_size=$%.0f | asset_type=%s",
+                 t, position_size, "Crypto" if is_crypto else "Equity")
 
     # Crypto is inherently more volatile
     vol_base = 0.04 if is_crypto else 0.015

@@ -14,8 +14,15 @@ invokes the LangGraph trading_graph, and renders a polished dashboard with:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
+
+# ── Setup logging FIRST — before any other project imports ────────────────────
+from logger import setup_logging
+setup_logging()
+
+logger = logging.getLogger(__name__)
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -24,12 +31,19 @@ from langchain_core.messages import HumanMessage
 # ── Load .env before importing any LangChain / NVIDIA modules ─────────────────
 load_dotenv()
 
-# ── Optional LangSmith tracing — uncomment to enable ─────────────────────────
-# os.environ["LANGCHAIN_TRACING_V2"] = "true"
-# os.environ["LANGCHAIN_API_KEY"] = os.environ.get("LANGCHAIN_API_KEY", "")
-# os.environ["LANGCHAIN_PROJECT"] = "multi-agent-trading-analysis"
+# ── LangSmith tracing — controlled via .env (LANGCHAIN_TRACING_V2=true/false) ─
+# load_dotenv() above already loaded LANGCHAIN_TRACING_V2, LANGCHAIN_API_KEY,
+# LANGCHAIN_PROJECT, and LANGCHAIN_ENDPOINT from .env into the environment.
+# LangChain detects LANGCHAIN_TRACING_V2 automatically — no extra code needed.
+_tracing_active = os.environ.get("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+logger.info(
+    "LangSmith tracing %s | project=%s",
+    "ENABLED" if _tracing_active else "DISABLED",
+    os.environ.get("LANGCHAIN_PROJECT", "not set"),
+)
 
-from graph import trading_graph  # noqa: E402  (after load_dotenv)
+from graph import trading_graph  # noqa: E402  (after load_dotenv + tracing setup)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page configuration
@@ -546,6 +560,7 @@ def main():
             )
         with info_col:
             if not os.environ.get("NVIDIA_API_KEY"):
+                logger.warning("NVIDIA_API_KEY not found in environment")
                 st.warning("⚠️ NVIDIA_API_KEY not found in environment. Set it in your `.env` file.", icon="⚠️")
 
     st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
@@ -557,11 +572,15 @@ def main():
             return
 
         if not os.environ.get("NVIDIA_API_KEY"):
+            logger.critical("NVIDIA_API_KEY is not set — analysis cannot proceed")
             st.error(
                 "NVIDIA_API_KEY is not set. Please add it to your `.env` file and restart the app.",
                 icon="🔑",
             )
             return
+
+        logger.info("Analysis triggered | ticker=%s | context_words=%d",
+                    ticker, len(context.split()) if context else 0)
 
         # Build initial state
         initial_state = {
@@ -648,6 +667,8 @@ def main():
             risk_summary = final_state.get("risk_summary") or "No risk summary provided."
             analyst_reports = final_state.get("analyst_reports", {})
 
+            logger.info("Analysis complete | ticker=%s | decision=%s | confidence=%s%%",
+                        ticker, final_decision, confidence)
             st.success(f"✅ Analysis complete for **{ticker}**!")
             st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
 
@@ -676,6 +697,7 @@ def main():
                 st.json(safe_state)
 
         except Exception as exc:
+            logger.error("Analysis failed | ticker=%s | error=%s", ticker, exc, exc_info=True)
             st.error(f"❌ An error occurred during analysis: {exc}")
             with st.expander("🔍 Error Details"):
                 import traceback
